@@ -1,0 +1,65 @@
+{
+  "suite": "evals/v7/decision-v7",
+  "suite_manifest_sha256": "a8f50e481b7d90b97da049e0ff6a01cee2f1ed204aed61a8265af0edbb5514d2",
+  "partition": "train",
+  "teacher": {
+    "base": "Qwen/Qwen3.5-9B",
+    "revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+    "readout": "zero-shot next-token letter logits (SemIf prompt, chat template)",
+    "rows_sha256": "81c2e83e6c42f576812ee4466b388978db843374544b64e6aea1c3788327bc32"
+  },
+  "rule": {
+    "select": "ambiguous",
+    "threshold": 0.8,
+    "lam": 0.5,
+    "ambiguous": "teacher top option != label and teacher top probability >= threshold",
+    "target": "(1 - lam) * one_hot(label) + lam * teacher"
+  },
+  "questions_scored": {
+    "yelp": 2000,
+    "dbpedia14": 1000,
+    "agnews": 3000,
+    "trec": 1000,
+    "mnli": 1000,
+    "imdb": 1000,
+    "sst5": 1000,
+    "boolq": 1000,
+    "amazon": 1000
+  },
+  "questions_softened": {
+    "agnews": 246,
+    "yelp": 326,
+    "imdb": 47,
+    "mnli": 104,
+    "trec": 120,
+    "boolq": 78,
+    "amazon": 187,
+    "sst5": 184,
+    "dbpedia14": 13
+  },
+  "records": 1209,
+  "files": {
+    "soft.jsonl": {
+      "sha256": "466094c5a40b74512ae1915c64a4503e0bafa6ed2697fb41bf36fb671eeecae3",
+      "records": 1209
+    },
+    "hard.jsonl": {
+      "sha256": "8f6cbf97a7ea60fa624d474f23364c649e8f1aea4f84e8ab5718af947234d734",
+      "records": 1209
+    }
+  },
+  "trainable_sources": [
+    "agnews",
+    "amazon",
+    "banking77",
+    "boolq",
+    "dbpedia14",
+    "imdb",
+    "mnli",
+    "sst5",
+    "trec",
+    "yelp",
+    "legacy_policy",
+    "compositional"
+  ]
+}

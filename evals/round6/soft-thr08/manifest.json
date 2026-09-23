@@ -1,0 +1,34 @@
+{
+  "version": "soft-thr08",
+  "construction": "long v2 + ambiguity targets at threshold 0.8",
+  "code_sha256": "fe0c9d3c8873917809320e3091cf13a4ed77bf1515ccea023b86311ed5d99a68",
+  "inputs": {
+    "evals/round5/longstate-v2/train.jsonl": {
+      "sha256": "83f504d273190fab6a060b1323b8fcd8ea9b44390c0360c69ccad20f2c0f2c02",
+      "records_used": 2800
+    },
+    "evals/round6/ambiguity-thr08/soft.jsonl": {
+      "sha256": "466094c5a40b74512ae1915c64a4503e0bafa6ed2697fb41bf36fb671eeecae3",
+      "records_used": 1209
+    }
+  },
+  "files": {
+    "train.jsonl": {
+      "sha256": "4f9121eb49e4b3fa9610a6bfa00414e5598692feffa104afc0cae3347a8f160a",
+      "records": 4009,
+      "soft_target_questions": 1305
+    }
+  },
+  "sources": {
+    "longstate": 2800,
+    "agnews": 199,
+    "amazon": 187,
+    "boolq": 78,
+    "dbpedia14": 13,
+    "imdb": 47,
+    "mnli": 104,
+    "sst5": 184,
+    "trec": 120,
+    "yelp": 277
+  }
+}

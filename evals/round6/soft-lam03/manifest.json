@@ -1,0 +1,34 @@
+{
+  "version": "soft-lam03",
+  "construction": "long v2 + ambiguity targets at lam 0.3",
+  "code_sha256": "fe0c9d3c8873917809320e3091cf13a4ed77bf1515ccea023b86311ed5d99a68",
+  "inputs": {
+    "evals/round5/longstate-v2/train.jsonl": {
+      "sha256": "83f504d273190fab6a060b1323b8fcd8ea9b44390c0360c69ccad20f2c0f2c02",
+      "records_used": 2800
+    },
+    "evals/round6/ambiguity-lam03/soft.jsonl": {
+      "sha256": "6405f10be37b8b77c941a0b9922128889eed0f41870a356e612cbe30ff529370",
+      "records_used": 1738
+    }
+  },
+  "files": {
+    "train.jsonl": {
+      "sha256": "9c40fba2191e99d9683343e4ba3cc37e2f6c14d7d37aa55016dbe7e329d0ebe6",
+      "records": 4538,
+      "soft_target_questions": 1876
+    }
+  },
+  "sources": {
+    "longstate": 2800,
+    "agnews": 234,
+    "amazon": 341,
+    "boolq": 95,
+    "dbpedia14": 20,
+    "imdb": 57,
+    "mnli": 150,
+    "sst5": 343,
+    "trec": 144,
+    "yelp": 354
+  }
+}

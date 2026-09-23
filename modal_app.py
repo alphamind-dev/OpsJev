@@ -85,7 +85,7 @@ def remote_source_hashes():
     return source_hashes()
 
 
-@app.function(image=image, gpu=GPU, cpu=TRIAL_CPU, memory=TRIAL_MEMORY, max_containers=8, retries=0, timeout=14400,   # a 35B-A3B bf16 checkpoint (70 GB) is staged through host memory while loading; the old 48 GB cap stalled the container
+@app.function(image=image, gpu=GPU, cpu=TRIAL_CPU, memory=TRIAL_MEMORY, max_containers=24, retries=0, timeout=14400,   # a 35B-A3B bf16 checkpoint (70 GB) is staged through host memory while loading; the old 48 GB cap stalled the container
               volumes={RUNS_MOUNT: runs_volume, HF_MOUNT: hf_cache}, secrets=secrets)
 def run_trial(study, index, label, config, suite, expected_sources, git_commit, existing=None, transfer=None):
     """One trial in one container. `existing` is a checkpoint path on the runs volume or a Hub id (legacy scoring)."""
@@ -351,7 +351,7 @@ def launch_detached(suite, plan_path, name, gpu, existing=(), transfer=None, bud
 def launch(suite, plan_path, name, gpu, existing=(), transfer=None, budget=20.0, timeout=1800):
     """Attached variant: run the trials on this app, wait, then pull and rank. Dies with the local client."""
     jobs, _ = admit_study(suite, plan_path, name, gpu, existing, transfer, budget, timeout)
-    fn = run_trial.with_options(gpu=gpu, timeout=timeout, retries=0, max_containers=8)
+    fn = run_trial.with_options(gpu=gpu, timeout=timeout, retries=0, max_containers=24)
     print(f"launching {len(jobs)} trial(s) on {gpu} for study {name}", flush=True)
     results = list(fn.starmap(jobs, return_exceptions=True))
     for job, result in zip(jobs, results):
