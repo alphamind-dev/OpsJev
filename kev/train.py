@@ -223,6 +223,7 @@ def parse_args():
     ap.add_argument("--special_embeddings", type=int, choices=[0, 1], default=0, help="also train the embeddings of the 5 delimiter tokens")
     ap.add_argument("--head_dim", type=int, default=256, help="pointer head dimension")
     ap.add_argument("--lora_targets", choices=["all", "dense", "attn", "qv"], default="all", help="LoRA module set; fewer modules = less drift from the base; dense = all minus the DeltaNet projections on hybrid bases")
+    ap.add_argument("--lora_placement", choices=list(DecisionModel.PLACEMENTS), default="full", help="question: the adapter is off on state tokens (the base reads the state unmodified; PLAN_27b A1)")
     ap.add_argument("--base_revision", default="", help="pin the base commit when the suite manifest does not pin this base")
     ap.add_argument("--p_none", type=float, default=0.1)
     ap.add_argument("--p_none_distract", type=float, default=0.12)
@@ -291,13 +292,13 @@ def main():
     tok = load_tokenizer(a.base, revision=revision)
     model = DecisionModel(a.base, tok, dev, lora=a.lora, revision=revision, head_dim=a.head_dim, lora_targets=a.lora_targets,
                           option_isolation=bool(a.option_isolation), special_embeddings=bool(a.special_embeddings),
-                          dtype=torch.bfloat16 if a.weights_dtype == "bf16" else torch.float32)
+                          dtype=torch.bfloat16 if a.weights_dtype == "bf16" else torch.float32, lora_placement=a.lora_placement)
     if a.checkpointing:
         model.lm.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.lm.config.use_cache = False
     # what this run will save as head.pt; also the architecture a warm start must match
     meta = Meta(base=a.base, base_revision=revision, lora=a.lora, head_dim=a.head_dim, option_isolation=bool(a.option_isolation),
-                special_embeddings=bool(a.special_embeddings), weights_dtype=a.weights_dtype, holdout=holdout)
+                special_embeddings=bool(a.special_embeddings), weights_dtype=a.weights_dtype, holdout=holdout, lora_placement=a.lora_placement)
     init_source = None
     if a.init_from:
         # delta mode (PR #9, Radexito): start from an already trained adapter + pointer head instead of the base model, so a

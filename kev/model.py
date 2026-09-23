@@ -193,8 +193,12 @@ SCORING_INTERFACE = ("encode", "forward", "probs", "probs_and_prefix", "probs_wi
 
 
 class DecisionModel(nn.Module):
-    def __init__(self, name, tok, device, lora=None, revision=None, attn=None, head_dim=256, option_isolation=False, special_embeddings=False, lora_targets="all", dtype=torch.float32):
+    PLACEMENTS = ("full", "question")
+
+    def __init__(self, name, tok, device, lora=None, revision=None, attn=None, head_dim=256, option_isolation=False, special_embeddings=False, lora_targets="all", dtype=torch.float32, lora_placement="full"):
         super().__init__()
+        if lora_placement not in self.PLACEMENTS: raise ValueError(f"lora_placement must be one of {self.PLACEMENTS}")
+        self.lora_placement = lora_placement
         # backbone only (no vocab head): we never generate text.
         # eager on MPS/CPU (known-good with our float 4D mask); SDPA on CUDA (accepts arbitrary additive masks).
         attn = attn or ("sdpa" if str(device).startswith("cuda") else "eager")
@@ -220,7 +224,35 @@ class DecisionModel(nn.Module):
             self.lm = get_peft_model(self.lm, cfg)
         self.head = PointerHead(self.lm.config.hidden_size, dp=head_dim)
         self.device = device
+        self._lora_gate = None
+        if lora and lora_placement == "question": self.install_lora_gate()
         self.to(device)
+
+    def install_lora_gate(self):
+        """Question-side LoRA (PLAN_27b A1, Solomon's SwitchLoRA): the adapter's output is multiplied by a per-position gate,
+        0 on state tokens and 1 on branch tokens, so the base model reads the state unmodified and a cached state serves
+        any adapter. The gate travels as a decoder-layer kwarg (`kev_lora_gate`, [N, L, 1]); a pre-hook on every layer
+        takes it before the layer runs, which also happens on a gradient-checkpointing recompute (it replays the same
+        kwargs), and a hook on every lora_B scales its output. The adapter must stay unmerged. Called for new models and by
+        kev.checkpoint after loading a question-side adapter."""
+        from peft.tuners.lora import LoraLayer
+        def take(module, args, kwargs):
+            self._lora_gate = kwargs.pop("kev_lora_gate", None)
+            return args, kwargs
+        def scale(module, inputs, output):
+            return output if self._lora_gate is None else output * self._lora_gate.to(output.dtype)
+        layers = [m for m in self.lm.modules() if type(m).__name__.endswith("DecoderLayer")]
+        loras = [b for m in self.lm.modules() if isinstance(m, LoraLayer) for b in m.lora_B.values()]
+        if not layers or not loras: raise ValueError("question-side LoRA needs decoder layers and an unmerged adapter")
+        for m in layers: m.register_forward_pre_hook(take, with_kwargs=True)
+        for b in loras: b.register_forward_hook(scale)
+
+    def _gate(self, rows_state_len, L):
+        """{kev_lora_gate: [N, L, 1]} with zeros on each row's first rows_state_len[i] positions, or {} under full placement."""
+        if self.lora_placement != "question": return {}
+        g = torch.ones((len(rows_state_len), L, 1), device=self.device)
+        for i, n in enumerate(rows_state_len): g[i, :n] = 0
+        return {"kev_lora_gate": g}
 
     backend = "torch"           # kev.mlx_model.MLXDecisionModel is the other implementation of this scoring interface
 
@@ -265,7 +297,8 @@ class DecisionModel(nn.Module):
             raise ValueError("cannot mix option-isolated and plain encodings in one batch")
         lm_dtype = next(self.lm.parameters()).dtype
         mask = branch_mask_batch([e["seg"] for e in encs], self.device, dtype=lm_dtype, opts=[e["opt"] for e in encs] if isolate else None, length=ids.shape[1])
-        return self.lm(input_ids=ids, position_ids=pos, attention_mask=mask).last_hidden_state.float()   # head stays fp32
+        gate = self._gate([e["seg"].count(0) for e in encs], ids.shape[1])
+        return self.lm(input_ids=ids, position_ids=pos, attention_mask=mask, **gate).last_hidden_state.float()   # head stays fp32
 
     def _readout(self, h, enc):
         return [self.head(h[d], h[torch.tensor(oi, device=self.device)]) for d, oi in zip(enc["decide_idx"], enc["opt_idx"])]
@@ -276,21 +309,22 @@ class DecisionModel(nn.Module):
         bound with the number of questions). The two forms agree (tests/test_model.py::test_rows_match_packed)."""
         return self.hybrid or any(len(e["ids"]) > SERVE_MAX_PACKED for e in encs)
 
-    def _rows_hidden(self, rows, cache=None, prefix_len=0):
+    def _rows_hidden(self, rows, cache=None, prefix_len=0, state_lens=None):
         """Hidden states of causal token rows, one [L_i, d] tensor per row. In eval mode the rows go through the backbone
         rows_per_pass at a time; training keeps one batch (its batches are small and autograd needs the whole graph anyway).
         With `cache`, the rows are branches continuing the cached state: the cache is replicated once per chunk (a copy,
-        so the caller's prefix stays pristine) and the cached tokens are marked real in the attention mask."""
+        so the caller's prefix stays pristine) and the cached tokens are marked real in the attention mask. `state_lens[i]`:
+        how many leading tokens of row i are state (the adapter is gated off there under question-side placement)."""
         chunk = len(rows) if self.training else rows_per_pass([ids for ids, _ in rows], prefix_len)
         out = []
         for start in range(0, len(rows), chunk):
             part = rows[start:start + chunk]
             ids, pos, att = self._pad_rows(part)
-            past = {}
+            past = self._gate(state_lens[start:start + chunk] if state_lens else [0] * len(part), ids.shape[1])
             if cache is not None:
                 replica = copy.deepcopy(cache); replica.reorder_cache(torch.zeros(len(part), dtype=torch.long, device=self.device))
                 att = torch.cat([torch.ones((len(part), prefix_len), dtype=torch.long, device=self.device), att], 1)
-                past = {"past_key_values": replica, "use_cache": True}
+                past = {**past, "past_key_values": replica, "use_cache": True}
             h = self.lm(input_ids=ids, position_ids=pos, attention_mask=att, **past).last_hidden_state.float()
             out += [h[i, : len(row_ids)] for i, (row_ids, _) in enumerate(part)]
         return out
@@ -304,8 +338,9 @@ class DecisionModel(nn.Module):
             S, Sp, brs = rows_of(e)
             for r in brs:
                 rows.append((S + r["ids"], Sp + r["pos"])); readouts.append((b, len(S) + r["decide"], [len(S) + o for o in r["opts"]]))
+        state_lens = [e["seg"].count(0) for e in encs for _ in e["decide_idx"]]
         out = [[] for _ in encs]
-        for h, (b, d, oi) in zip(self._rows_hidden(rows), readouts):
+        for h, (b, d, oi) in zip(self._rows_hidden(rows, state_lens=state_lens), readouts):
             out[b].append(self.head(h[d], h[torch.tensor(oi, device=self.device)]))
         return out
 
@@ -340,7 +375,7 @@ class DecisionModel(nn.Module):
         Ls = enc["seg"].count(0)
         ids = torch.tensor([enc["ids"][:Ls]], device=self.device); pos = torch.tensor([enc["pos"][:Ls]], device=self.device)
         # the cache must know the layer types (hybrid backbones keep recurrent + conv states per DeltaNet layer)
-        out = self.lm(input_ids=ids, position_ids=pos, past_key_values=DynamicCache(config=self.lm.config), use_cache=True)
+        out = self.lm(input_ids=ids, position_ids=pos, past_key_values=DynamicCache(config=self.lm.config), use_cache=True, **self._gate([Ls], Ls))
         return Ls, out.past_key_values, out.last_hidden_state[0].float()
 
     @torch.no_grad()
@@ -356,7 +391,7 @@ class DecisionModel(nn.Module):
         ids = torch.tensor([enc["ids"]], device=self.device); pos = torch.tensor([enc["pos"]], device=self.device)
         dt = next(self.lm.parameters()).dtype
         mask = branch_mask_batch([enc["seg"]], self.device, dtype=dt, opts=[enc["opt"]] if enc.get("option_isolation") else None)
-        out = self.lm(input_ids=ids, position_ids=pos, attention_mask=mask, past_key_values=DynamicCache(config=self.lm.config), use_cache=True)
+        out = self.lm(input_ids=ids, position_ids=pos, attention_mask=mask, past_key_values=DynamicCache(config=self.lm.config), use_cache=True, **self._gate([Ls], len(enc["ids"])))
         h = out.last_hidden_state[0].float()
         out.past_key_values.crop(-(len(enc["ids"]) - Ls))     # keep the state only (negative = drop that many trailing tokens; positive form deprecated in transformers 5)
         return [F.softmax(z, -1).cpu() for z in self._readout(h, enc)], (Ls, out.past_key_values, h[:Ls].clone())

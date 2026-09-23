@@ -159,3 +159,47 @@ def test_init_from_warm_start_and_compatibility_checks(tmp_path):
     assert hb.extra["init_source"]["adapter_sha256"] and read_json(tmp_path / "b/training_config.json")["init_source"]["resolved"] == str(tmp_path / "a")
     bad = subprocess.run(base + ["--out", str(tmp_path / "c"), "--init_from", str(tmp_path / "a"), "--lora", "8"], capture_output=True, text=True, env=env)
     assert bad.returncode != 0 and "lora is 16 there and 8 here" in bad.stderr
+
+
+def test_question_side_lora_gates_the_state_exactly():
+    """PLAN_27b A1: under lora_placement="question" the adapter is off on state tokens. On the hybrid 0.8B base with a
+    randomised adapter: (1) the training row form equals the serving prefix path (state pass gated off, branches on);
+    (2) the state's hidden states equal the base model's with the adapter disabled; (3) the answers differ from full
+    placement (the gate does something); (4) gradients with gradient checkpointing equal gradients without, because the
+    recompute replays the gate; (5) a full-placement model is untouched by the new code path (no hooks installed)."""
+    import torch
+    from kev.model import DecisionModel, load_tokenizer
+    base = "Qwen/Qwen3.5-0.8B-Base"; tok = load_tokenizer(base)
+    torch.manual_seed(0)
+    q = DecisionModel(base, tok, "cpu", lora=4, lora_placement="question")
+    full = DecisionModel(base, tok, "cpu", lora=4)
+    for m in (q, full):
+        for n, p in m.lm.named_parameters():
+            if "lora_B" in n: torch.manual_seed(hash(n) % 1000); p.data.normal_(0, 0.05)
+    assert full._lora_gate is None and not any(h for mod in full.lm.modules() for h in mod._forward_pre_hooks.values())
+    rec = {"state": "Order 4411 arrived late and the box was crushed. Two charges appear on the card.",
+           "questions": [{"instr": "Is there a billing problem?", "options": ["yes", "no"], "label": 0},
+                         {"instr": "Which team should handle this?", "options": ["returns", "shipping", "billing", "other"], "label": 2}]}
+    enc = q.encode(tok, rec)
+    q.eval(); full.eval()
+    with torch.no_grad():
+        rows = [torch.softmax(z, -1) for z in q.forward(enc)]
+        served, (Ls, _, h_state) = q.probs_and_prefix(enc)
+        with q.lm.disable_adapter():
+            base_state = q.lm(input_ids=torch.tensor([enc["ids"][:Ls]]), position_ids=torch.tensor([enc["pos"][:Ls]])).last_hidden_state[0].float()
+        full_rows = [torch.softmax(z, -1) for z in full.forward(enc)]
+    assert all((a - b).abs().max() < 1e-4 for a, b in zip(rows, served))
+    assert (h_state - base_state).abs().max() < 1e-4
+    assert max((a - b).abs().max() for a, b in zip(rows, full_rows)) > 1e-3
+    def grads(ckpt, placement="question"):
+        q.train(); q.lora_placement = placement
+        if ckpt: q.lm.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False}); q.lm.config.use_cache = False
+        else: q.lm.gradient_checkpointing_disable()
+        q.zero_grad(set_to_none=True); torch.manual_seed(1)    # same LoRA-dropout draws in every run
+        loss = sum(torch.nn.functional.cross_entropy(z[None], torch.tensor([qq["label"]])) for z, qq in zip(q.forward(enc), rec["questions"]))
+        loss.backward()
+        return torch.cat([p.grad.flatten() for n, p in sorted(q.lm.named_parameters()) if p.grad is not None])
+    plain, checkpointed, ungated = grads(False), grads(True), grads(False, "full")
+    rel = lambda a, b: ((a - b).norm() / b.norm()).item()
+    assert rel(checkpointed, plain) < 1e-5        # the recompute replays the gate
+    assert rel(ungated, plain) > 1e-2             # and the check would see a lost gate

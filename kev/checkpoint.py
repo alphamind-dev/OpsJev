@@ -52,9 +52,10 @@ class Meta:
     weights_dtype: str = "fp32"
     temperature: float = 1.0
     holdout: list = field(default_factory=list)
+    lora_placement: str = "full"
     extra: dict = field(default_factory=dict)
 
-    KNOWN = ("base", "head", "base_revision", "lora", "head_dim", "option_isolation", "special_embeddings", "weights_dtype", "temperature", "holdout")
+    KNOWN = ("base", "head", "base_revision", "lora", "head_dim", "option_isolation", "special_embeddings", "weights_dtype", "temperature", "holdout", "lora_placement")
 
     @classmethod
     def from_dict(cls, d):
@@ -176,6 +177,7 @@ class Checkpoint:
         from .mlx_model import MLXDecisionModel, merge_lora
         if not opts.merge: raise ValueError("the MLX backend always merges the adapter (KEV_MERGE=0 needs backend=torch)")
         if self.meta.option_isolation: raise ValueError("option_isolation needs the packed mask; not available on the MLX backend")
+        if self.meta.lora_placement != "full": raise ValueError("question-side LoRA needs the unmerged adapter; the MLX backend merges it (use backend=torch)")
         if not self.hybrid_base(): raise ValueError(f"the MLX backend is for the hybrid (Qwen3.5) bases; {self.meta.base} is attention-only and runs on MPS with backend=torch")
         base_dir = resolve_run(f"{self.meta.base}@{self.meta.base_revision or ''}")   # the base snapshot the torch path already cached
         m = MLXDecisionModel(base_dir, pad_id(tok), head_dim=self.meta.head_dim)
@@ -191,8 +193,9 @@ class Checkpoint:
             # the same way and keep the fp32 adapter unmerged rather than folding it into bf16 weights.
             dtype, merge = torch.bfloat16, False
         merge = merge and not self.adapter_config().get("trainable_token_indices")   # token-trained adapters stay unmerged
+        merge = merge and meta.lora_placement == "full"                               # a gated (question-side) adapter cannot be folded in
         m = DecisionModel(meta.base, tok, device, lora=None, revision=meta.base_revision, head_dim=meta.head_dim,
-                          option_isolation=meta.option_isolation, dtype=torch.float32 if merge else dtype, attn=opts.attn)
+                          option_isolation=meta.option_isolation, dtype=torch.float32 if merge else dtype, attn=opts.attn, lora_placement=meta.lora_placement)
         m.lm = PeftModel.from_pretrained(m.lm, self.path, torch_device=str(device)).to(device)   # trainable token embeddings, if any, live in the adapter
         if opts.lora_scale != 1:
             for module in m.lm.modules():
@@ -200,10 +203,11 @@ class Checkpoint:
                     for k in module.scaling: module.scaling[k] *= opts.lora_scale
             m.lora_scale = opts.lora_scale
         if merge: m.lm = m.lm.merge_and_unload()     # in fp32: exact
+        if meta.lora_placement == "question": m.install_lora_gate()
         if dtype != torch.float32: m.lm = m.lm.to(dtype)
         return m
 
-    COMPAT_FIELDS = ("base", "base_revision", "lora", "head_dim", "option_isolation", "special_embeddings")
+    COMPAT_FIELDS = ("base", "base_revision", "lora", "head_dim", "option_isolation", "special_embeddings", "lora_placement")
 
     def warm_start(self, model, ours):
         """Delta training: load this checkpoint's adapter and pointer head into `model` (a fresh DecisionModel built with
