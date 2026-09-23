@@ -1,0 +1,34 @@
+{
+  "version": "soft-nomnli-thr08",
+  "construction": "long v2 + ambiguity targets at threshold 0.8, MNLI records' targets removed",
+  "code_sha256": "ffea3203c2cfe4ac89863362e5a2c7df052381b64f48f98bee331490e2794849",
+  "inputs": {
+    "evals/round5/longstate-v2/train.jsonl": {
+      "sha256": "83f504d273190fab6a060b1323b8fcd8ea9b44390c0360c69ccad20f2c0f2c02",
+      "records_used": 2800
+    },
+    "evals/round6/ambiguity-thr08/soft.jsonl": {
+      "sha256": "466094c5a40b74512ae1915c64a4503e0bafa6ed2697fb41bf36fb671eeecae3",
+      "records_used": 1209
+    }
+  },
+  "files": {
+    "train.jsonl": {
+      "sha256": "0d039ee6a2d75226f9433dfb6edc41eb8f218d5e6ea024abd3d2dc67af6c5d10",
+      "records": 4009,
+      "soft_target_questions": 1201
+    }
+  },
+  "sources": {
+    "longstate": 2800,
+    "agnews": 199,
+    "amazon": 187,
+    "boolq": 78,
+    "dbpedia14": 13,
+    "imdb": 47,
+    "mnli": 104,
+    "sst5": 184,
+    "trec": 120,
+    "yelp": 277
+  }
+}

@@ -14,6 +14,10 @@ Each variant is written to evals/round6/<variant>/train.jsonl with a manifest ca
     soft-du        long v2 + ambiguity soft + the dates / unknowable records (does a delta on a delta forget night 2?)
     soft-longmix3  long v3 + ambiguity soft (more 4k and 6k records)
     soft-half      1,400 long v2 records (200 / 200 / 500 / 500, fixed seed) + ambiguity soft (half the long records, for 4B)
+
+Round 2 (two-knob combinations of round-1 arms; `--round2`):
+    soft-nomnli-thr08   long v2 + ambiguity targets at threshold 0.8 with the MNLI records' targets removed
+    soft-half-nomnli    1,400 long v2 records + ambiguity soft with the MNLI records' targets removed
 """
 import random, subprocess, sys
 from collections import Counter
@@ -80,7 +84,15 @@ def write_variant(name, parts, description):
     print(f"{name}: {len(rows)} records, {soft_q} soft-target questions")
 
 
+def round2():
+    long_v2 = read_jsonl(ROOT / LONG_V2)
+    thr08 = "evals/round6/ambiguity-thr08/soft.jsonl"
+    write_variant("soft-nomnli-thr08", [(LONG_V2, long_v2), (thr08, without_mnli_targets(thr08))], "long v2 + ambiguity targets at threshold 0.8, MNLI records' targets removed")
+    write_variant("soft-half-nomnli", [(LONG_V2, half_long(LONG_V2)), (SOFT, without_mnli_targets(SOFT))], "1,400 long v2 records (200/200/500/500, seed round6-soft-half) + ambiguity soft, MNLI records' targets removed")
+
+
 def main():
+    if "--round2" in sys.argv: return round2()
     long_v2, soft = read_jsonl(ROOT / LONG_V2), read_jsonl(ROOT / SOFT)
     lam03, thr08 = ambiguity("ambiguity-lam03", lam=0.3), ambiguity("ambiguity-thr08", threshold=0.8)
     write_variant("soft-nomnli", [(LONG_V2, long_v2), (SOFT, without_mnli_targets(SOFT))], "long v2 + ambiguity soft, MNLI records' targets removed")
