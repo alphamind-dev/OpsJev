@@ -242,7 +242,28 @@ On Apple Silicon there are no PyTorch kernels for the DeltaNet layers, so the se
 
 The server caches every state prefix for these models, so a repeated document pays only for its questions. `KEV_BACKEND=torch` restores the PyTorch path, as does `KEV_DTYPE=fp32` (asking for the exact path always means PyTorch); `/v1/models` reports which backend and dtype are serving. The previous-generation Qwen3 models (`jaredpalmer/kev-4b@qwen3`, `kev-8b`, `kev-0.6b`) still run on plain PyTorch MPS and remain a fine choice on a Mac.
 
-`scripts/mlx_parity.py --run jaredpalmer/kev-4b` reproduces the parity and latency numbers on your machine.
+`scripts/backend_parity.py --run jaredpalmer/kev-4b` reproduces the parity and latency numbers on your machine.
+
+### Native Apps (ExecuTorch)
+
+To embed Kev in an app without Python, [ExecuTorch](https://github.com/pytorch/executorch)'s Kev example ([pytorch/executorch#23023](https://github.com/pytorch/executorch/pull/23023), not merged yet) exports a checkpoint as a single program with two methods: `prefill` runs the state once and `score` answers up to eight questions on it. The LoRA is merged and the pointer head and the checkpoint's temperature are inside, so the program returns the same calibrated probabilities as the server. A C++ app calls it through ExecuTorch's `Module` API, on the CPU (XNNPACK) or an Apple GPU (MLX), in fp32 or unquantized bf16.
+
+Kev can also score an exported program from Python, which is how it is held to the bar the MLX backend cleared:
+
+```bash
+KEV_BACKEND=executorch KEV_PROGRAM=kev-cpu/model.pte python -m kev.serve --run jaredpalmer/kev-0.8b
+```
+
+ExecuTorch 1.5 needs torch 2.14, so this runs in its own environment (AGENTS.md has the recipe). Kev-0.8B against the fp32 PyTorch path on all 1,264 decision-v7 development questions, and the median time on an M5 for a new state plus all of its questions:
+
+| Program | Largest difference | Changed answers | 19-token ticket, 3 questions | 314-token document, 5 questions |
+|---|---|---|---|---|
+| XNNPACK fp32 (CPU) | 0.000007 | 0 | 242 ms | 591 ms |
+| XNNPACK bf16 (CPU) | 0.035 | 3 | 687 ms | 2,269 ms |
+| MLX bf16 (GPU) | 0.039 | 3 | 87 ms | 174 ms |
+| Kev's MLX backend (mlx-lm), for comparison | 0.054 | 4 | 53 ms | 75 ms |
+
+Every program passes the MLX backend's accuracy bar. On speed, bf16 is slower than fp32 on this CPU, as ExecuTorch's own M1 Pro measurements also found, and on a Mac Kev's MLX backend stays the faster choice: the programs are for apps that cannot ship Python. Times are through the Python bindings; the C++ runner measured within 3% of them (235 vs 242 ms for the ticket on XNNPACK fp32). The C++ runner re-implements Kev's encoder and links ExecuTorch's own tokenizer. The encoder matches Kev's exactly, but the tokenizer currently drops accents from some non-ASCII text ("Agustín" becomes "Agustin"): that changes the tokens of 29 of the 1,264 questions and their probabilities by up to 0.008, with no changed answers. ASCII text is unaffected. The fix belongs in ExecuTorch's tokenizer library; until it lands, the native runner is not recommended for non-English text, and `scripts/backend_parity.py --native_tokenizer --suite <suite>` measures the effect on a suite's development records. The exported programs accept states of up to 384 tokens and 1,024 tokens per question with its state (the training context, smaller than the server's 8,192); a longer request is refused, never truncated.
 
 For the attention-only models the server merges the LoRA weights in fp32 before casting, uses SDPA attention on Apple GPUs, pads MPS inputs to 64-token buckets, and caches the state prefix for repeated requests (four states of at least 384 tokens by default). With a repeated 772-token state, Kev-4B (Qwen3) answers in 242 ms instead of 861 ms.
 

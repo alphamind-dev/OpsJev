@@ -3196,5 +3196,165 @@
       "rows",
       "mean_dp"
     ]
+  },
+  {
+    "printed": "0.000007",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-parity-0.8b-xnnpack-fp32/report.json",
+    "path": [
+      "prefix",
+      "max_dp"
+    ]
+  },
+  {
+    "printed": "242",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-parity-0.8b-xnnpack-fp32/report.json",
+    "path": [
+      "latency_ms",
+      "support_request",
+      "total"
+    ]
+  },
+  {
+    "printed": "591",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-parity-0.8b-xnnpack-fp32/report.json",
+    "path": [
+      "latency_ms",
+      "document_request",
+      "total"
+    ]
+  },
+  {
+    "printed": "0.035",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-parity-0.8b-xnnpack-bf16/report.json",
+    "path": [
+      "prefix",
+      "max_dp"
+    ]
+  },
+  {
+    "printed": "687",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-parity-0.8b-xnnpack-bf16/report.json",
+    "path": [
+      "latency_ms",
+      "support_request",
+      "total"
+    ]
+  },
+  {
+    "printed": "2,269",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-parity-0.8b-xnnpack-bf16/report.json",
+    "path": [
+      "latency_ms",
+      "document_request",
+      "total"
+    ]
+  },
+  {
+    "printed": "0.039",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-parity-0.8b-mlx-bf16/report.json",
+    "path": [
+      "prefix",
+      "max_dp"
+    ]
+  },
+  {
+    "printed": "87",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-parity-0.8b-mlx-bf16/report.json",
+    "path": [
+      "latency_ms",
+      "support_request",
+      "total"
+    ]
+  },
+  {
+    "printed": "174",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-parity-0.8b-mlx-bf16/report.json",
+    "path": [
+      "latency_ms",
+      "document_request",
+      "total"
+    ]
+  },
+  {
+    "printed": "53",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-compare-mlx-0.8b/report.json",
+    "path": [
+      "latency_ms",
+      "support_request",
+      "total"
+    ]
+  },
+  {
+    "printed": "75",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-compare-mlx-0.8b/report.json",
+    "path": [
+      "latency_ms",
+      "document_request",
+      "total"
+    ]
+  },
+  {
+    "printed": "235",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-native-0.8b-xnnpack-fp32/report.json",
+    "path": [
+      "kev_runner_benchmark_ms",
+      "total"
+    ]
+  },
+  {
+    "printed": "0.008",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-native-0.8b-xnnpack-fp32/report.json",
+    "path": [
+      "max_dp"
+    ]
+  },
+  {
+    "printed": "29",
+    "in": [
+      "README.md"
+    ],
+    "source": "runs/et-parity-0.8b-xnnpack-fp32/report.json",
+    "path": [
+      "native_token_mismatch_questions"
+    ]
   }
 ]
