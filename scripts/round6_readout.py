@@ -100,7 +100,7 @@ def main():
     arms.append(arm_report(itag, itrial, iprefix, parent))
     for d in sorted(Path(f"runs/r6-{a.size}").glob("*-trial-*")):
         if not (d / "transfer/rows.json").exists(): continue
-        cfg = read_json(d / "result.json")["config"]
+        cfg = read_json(d / "provenance.json")["config"]
         arms.append(arm_report(label(cfg), str(d), f"r6-{a.size}-{label(cfg)}", parent))
     ranked = sorted([r for r in arms if r["passed"]], key=lambda r: (-r["long"]["delta"], r["short"]["brier"]["delta"], -r["pooled_external"]["delta"]))
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
